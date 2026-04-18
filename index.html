@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>RFID Finder - نظام البحث في المخزن</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a1a;
+            color: white;
+            padding: 16px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            padding: 25px;
+            background: linear-gradient(135deg, #4361ee, #3a0ca3);
+            border-radius: 25px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 1.4rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .card {
+            background: rgba(30, 30, 46, 0.95);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .target-input {
+            width: 100%;
+            padding: 15px;
+            background: #1a1a2e;
+            border: 2px solid #4361ee;
+            border-radius: 12px;
+            color: white;
+            font-family: monospace;
+            font-size: 16px;
+            text-align: center;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary { background: #4361ee; color: white; }
+        .btn-success { background: #06ffa5; color: #1a1a2e; }
+        .btn-danger { background: #f72585; color: white; }
+        .btn-warning { background: #f8961e; color: white; }
+        .status-light {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #555;
+            display: inline-block;
+            margin-left: 8px;
+        }
+        .status-light.searching { background: #f8961e; animation: blink 1s infinite; }
+        .status-light.found { background: #06ffa5; box-shadow: 0 0 20px #06ffa5; }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .found-beacon {
+            text-align: center;
+            padding: 30px;
+            background: rgba(6, 255, 165, 0.1);
+            border-radius: 20px;
+            margin-top: 15px;
+            display: none;
+            border: 2px solid #06ffa5;
+            animation: pulse 0.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(6, 255, 165, 0.3); }
+            50% { box-shadow: 0 0 50px rgba(6, 255, 165, 0.8); }
+        }
+        .found-beacon i { font-size: 3rem; color: #06ffa5; }
+        .found-beacon h2 { color: #06ffa5; margin: 10px 0; }
+        .tag-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .tag-item {
+            background: #1a1a2e;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tag-item.found {
+            background: rgba(6, 255, 165, 0.2);
+            border-right: 3px solid #06ffa5;
+        }
+        .tag-epc {
+            font-family: monospace;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 16px;
+            right: 16px;
+            background: rgba(0,0,0,0.95);
+            border-radius: 50px;
+            padding: 12px 20px;
+            text-align: center;
+            z-index: 1000;
+            animation: slideUp 0.3s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        #hiddenScanner {
+            position: fixed;
+            top: -100px;
+            left: -100px;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-warehouse"></i> RFID Warehouse Finder</h1>
+            <p>الصق رقم التاج → اذهب للمخزن → امسح التاجات → اعثر عليه فوراً!</p>
+        </div>
+
+        <div class="card">
+            <h3><i class="fas fa-tag"></i> 🎯 التاج المطلوب</h3>
+            <input type="text" id="targetTag" class="target-input" placeholder="مثال: E2001234567890">
+            <div class="btn-group">
+                <button id="pasteBtn" class="btn btn-primary"><i class="fas fa-paste"></i> لصق</button>
+                <button id="startBtn" class="btn btn-success"><i class="fas fa-search"></i> بدء البحث</button>
+                <button id="clearBtn" class="btn btn-danger"><i class="fas fa-eraser"></i> مسح</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="btn-group" style="justify-content: space-between;">
+                <div>
+                    <span class="status-light" id="statusLight"></span>
+                    <span id="statusText">في انتظار التاج</span>
+                </div>
+                <button id="testBtn" class="btn btn-warning btn-sm"><i class="fas fa-bell"></i> اختبار</button>
+            </div>
+
+            <div id="foundBeacon" class="found-beacon">
+                <i class="fas fa-check-circle"></i>
+                <h2>🎉 تم العثور على التاج! 🎉</h2>
+                <p id="foundTag" style="font-family: monospace;"></p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3><i class="fas fa-list"></i> التاجات المقروءة <span id="count" style="background:#4361ee; padding:2px 8px; border-radius:20px;">0</span></h3>
+            <div class="tag-list" id="tagList">
+                <div style="text-align:center; padding:30px; color:#666;">
+                    <i class="fas fa-bluetooth-b" style="font-size:2rem;"></i><br>
+                    قم بمسح التاجات - ستظهر هنا
+                </div>
+            </div>
+            <div class="btn-group" style="margin-top:15px;">
+                <button id="focusBtn" class="btn btn-primary"><i class="fas fa-keyboard"></i> تفعيل القارئ</button>
+                <button id="clearTagsBtn" class="btn btn-danger"><i class="fas fa-trash"></i> مسح القائمة</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="text" id="hiddenScanner" autofocus>
+
+    <script>
+        // ============================================
+        // متغيرات حقيقية
+        // ============================================
+        let targetTag = "";
+        let isSearching = false;
+        let scannedTags = [];
+        let audioCtx = null;
+        let lastEpc = "";
+        let lastTime = 0;
+        let readBuffer = "";
+        let bufferTimeout = null;
+
+        // عناصر DOM
+        const targetInput = document.getElementById('targetTag');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const startBtn = document.getElementById('startBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const testBtn = document.getElementById('testBtn');
+        const focusBtn = document.getElementById('focusBtn');
+        const clearTagsBtn = document.getElementById('clearTagsBtn');
+        const statusLight = document.getElementById('statusLight');
+        const statusText = document.getElementById('statusText');
+        const foundBeacon = document.getElementById('foundBeacon');
+        const foundTagSpan = document.getElementById('foundTag');
+        const tagList = document.getElementById('tagList');
+        const countSpan = document.getElementById('count');
+        const hiddenScanner = document.getElementById('hiddenScanner');
+
+        // ============================================
+        // نظام الصوت (حقيقي)
+        // ============================================
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(freq, duration, vol = 0.15) {
+            initAudio();
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
+        }
+
+        function playFoundSound() {
+            playSound(523, 0.12, 0.2);
+            setTimeout(() => playSound(659, 0.12, 0.2), 100);
+            setTimeout(() => playSound(784, 0.2, 0.25), 200);
+            setTimeout(() => playSound(1047, 0.3, 0.2), 400);
+        }
+
+        function playScanSound() {
+            playSound(600, 0.05, 0.1);
+        }
+
+        // ============================================
+        // معالجة قراءة التاج (من قارئ Bluetooth)
+        // ============================================
+        function processTag(data) {
+            let cleaned = data.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+            
+            if (cleaned.length >= 8 && cleaned.length <= 32) {
+                const now = Date.now();
+                if (cleaned === lastEpc && (now - lastTime) < 800) return;
+                
+                lastEpc = cleaned;
+                lastTime = now;
+                playScanSound();
+                
+                addTagToList(cleaned);
+                
+                if (isSearching && targetTag && cleaned === targetTag.toUpperCase()) {
+                    onTagFound(cleaned);
+                } else if (isSearching && targetTag) {
+                    showToast(`📡 قرأ: ${formatEPC(cleaned)} - ليس المطلوب`, 2000);
+                }
+            }
+        }
+
+        // التقاط من الكيبورد
+        function setupCapture() {
+            hiddenScanner.focus();
+            
+            hiddenScanner.addEventListener('input', (e) => {
+                if (e.target.value) {
+                    processTag(e.target.value);
+                    hiddenScanner.value = '';
+                }
+            });
+            
+            document.addEventListener('keypress', (e) => {
+                if (document.activeElement === targetInput) return;
+                
+                if (/[A-Za-z0-9]/i.test(e.key)) {
+                    readBuffer += e.key;
+                    if (bufferTimeout) clearTimeout(bufferTimeout);
+                    bufferTimeout = setTimeout(() => {
+                        if (readBuffer.length >= 6) processTag(readBuffer);
+                        readBuffer = "";
+                    }, 60);
+                } else if (e.key === 'Enter' && readBuffer.length > 0) {
+                    processTag(readBuffer);
+                    readBuffer = "";
+                }
+            });
+            
+            document.body.addEventListener('click', () => {
+                if (document.activeElement !== hiddenScanner && document.activeElement !== targetInput) {
+                    hiddenScanner.focus();
+                }
+            });
+        }
+
+        // ============================================
+        // إدارة القائمة
+        // ============================================
+        function addTagToList(epc) {
+            if (scannedTags.find(t => t.epc === epc)) return;
+            
+            scannedTags.unshift({
+                id: scannedTags.length + 1,
+                epc: epc,
+                time: new Date().toLocaleTimeString('ar-SA')
+            });
+            
+            updateTagList();
+            showToast(`✅ تمت قراءة: ${formatEPC(epc)}`, 1500);
+        }
+
+        function updateTagList() {
+            if (scannedTags.length === 0) {
+                tagList.innerHTML = `<div style="text-align:center; padding:30px; color:#666;">
+                    <i class="fas fa-bluetooth-b" style="font-size:2rem;"></i><br>قبل التاجات ستظهر هنا
+                </div>`;
+                countSpan.textContent = '0';
+                return;
+            }
+            
+            tagList.innerHTML = scannedTags.map(t => `
+                <div class="tag-item ${targetTag && t.epc === targetTag.toUpperCase() ? 'found' : ''}">
+                    <div>
+                        <div class="tag-epc">${formatEPC(t.epc)}</div>
+                        <div style="font-size:10px; color:#888;">${t.time}</div>
+                    </div>
+                    ${targetTag && t.epc === targetTag.toUpperCase() ? '<span style="background:#06ffa5; color:#000; padding:4px 8px; border-radius:20px;">✓ المطلوب</span>' : ''}
+                </div>
+            `).join('');
+            
+            countSpan.textContent = scannedTags.length;
+        }
+
+        function clearTagList() {
+            scannedTags = [];
+            updateTagList();
+            showToast('🗑️ تم مسح القائمة', 1500);
+        }
+
+        // ============================================
+        // عند العثور على التاج
+        // ============================================
+        function onTagFound(epc) {
+            playFoundSound();
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            
+            foundBeacon.style.display = 'block';
+            foundTagSpan.textContent = formatEPC(epc);
+            statusLight.className = 'status-light found';
+            statusText.innerHTML = '✅ تم العثور على التاج!';
+            isSearching = false;
+            
+            targetInput.style.borderColor = '#06ffa5';
+            targetInput.style.boxShadow = '0 0 20px rgba(6,255,165,0.5)';
+            
+            showToast(`🎯🎯🎯 تم العثور على التاج المطلوب! 🎯🎯🎯`, 4000);
+            
+            setTimeout(() => {
+                targetInput.style.borderColor = '';
+                targetInput.style.boxShadow = '';
+            }, 3000);
+            
+            setTimeout(() => {
+                foundBeacon.style.display = 'none';
+            }, 6000);
+        }
+
+        // ============================================
+        // التحكم الرئيسي
+        // ============================================
+        function startSearch() {
+            let newTarget = targetInput.value.trim().toUpperCase();
+            if (!newTarget) {
+                showToast('⚠️ الرجاء إدخال رقم التاج المطلوب', 2000);
+                return;
+            }
+            
+            targetTag = newTarget;
+            isSearching = true;
+            
+            statusLight.className = 'status-light searching';
+            statusText.innerHTML = '🔍 جاري البحث... امسح التاجات';
+            foundBeacon.style.display = 'none';
+            
+            updateTagList();
+            showToast(`🎯 البحث عن: ${formatEPC(targetTag)}`, 2000);
+            showToast(`🔍 اذهب إلى المخزن وامسح التاجات`, 2500);
+            
+            playSound(800, 0.1, 0.15);
+        }
+
+        function clearTarget() {
+            targetTag = "";
+            targetInput.value = "";
+            isSearching = false;
+            statusLight.className = '';
+            statusText.innerHTML = 'في انتظار التاج';
+            foundBeacon.style.display = 'none';
+            targetInput.style.borderColor = '';
+            updateTagList();
+            showToast('تم مسح التاج المستهدف', 1500);
+        }
+
+        async function pasteFromClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    targetInput.value = text.trim();
+                    showToast('✅ تم لصق الرقم', 1500);
+                    startSearch();
+                } else {
+                    showToast('الحافظة فارغة', 1500);
+                }
+            } catch(e) {
+                showToast('الرجاء لصق الرقم يدوياً', 1500);
+            }
+        }
+
+        function testSystem() {
+            playFoundSound();
+            if (navigator.vibrate) navigator.vibrate(200);
+            foundBeacon.style.display = 'block';
+            foundTagSpan.textContent = 'اختبار النظام';
+            setTimeout(() => {
+                foundBeacon.style.display = 'none';
+            }, 2000);
+            showToast('🔊✅ اختبار الصوت والضوء', 2000);
+        }
+
+        // ============================================
+        // أدوات مساعدة
+        // ============================================
+        function formatEPC(epc) {
+            return epc.match(/.{1,4}/g)?.join(' ') || epc;
+        }
+
+        function showToast(msg, duration = 2000) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), duration);
+        }
+
+        // ============================================
+        // الأحداث
+        // ============================================
+        pasteBtn.addEventListener('click', pasteFromClipboard);
+        startBtn.addEventListener('click', startSearch);
+        clearBtn.addEventListener('click', clearTarget);
+        testBtn.addEventListener('click', testSystem);
+        focusBtn.addEventListener('click', () => {
+            hiddenScanner.focus();
+            showToast('👆 القارئ جاهز - امسح أي تاج', 1500);
+        });
+        clearTagsBtn.addEventListener('click', clearTagList);
+        targetInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startSearch();
+        });
+
+        // التهيئة
+        setupCapture();
+        hiddenScanner.focus();
+        
+        document.body.addEventListener('click', () => initAudio(), { once: true });
+        
+        showToast('✨ النظام جاهز - الصق رقم التاج وابدأ البحث!', 3000);
+        
+        console.log('✅ RFID Finder جاهز - انتظر قراءات من قارئ Bluetooth');
+    </script>
+</body>
+</html>

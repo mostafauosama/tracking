@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>RFID Finder - نظام البحث في المخزن</title>
+    <title>RFID Finder V2 - تصحيح مشكلة المطابقة</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -25,18 +25,12 @@
         }
         .header {
             text-align: center;
-            padding: 25px;
+            padding: 20px;
             background: linear-gradient(135deg, #4361ee, #3a0ca3);
-            border-radius: 25px;
+            border-radius: 20px;
             margin-bottom: 20px;
         }
-        .header h1 {
-            font-size: 1.4rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
+        .header h1 { font-size: 1.3rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .card {
             background: rgba(30, 30, 46, 0.95);
             border-radius: 20px;
@@ -53,8 +47,21 @@
             font-family: monospace;
             font-size: 16px;
             text-align: center;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
             margin-bottom: 10px;
+        }
+        .debug-input {
+            width: 100%;
+            padding: 12px;
+            background: #1a1a2e;
+            border: 1px solid #f8961e;
+            border-radius: 12px;
+            color: #f8961e;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 10px;
+            direction: ltr;
+            text-align: left;
         }
         .btn-group {
             display: flex;
@@ -79,32 +86,37 @@
             width: 16px;
             height: 16px;
             border-radius: 50%;
-            background: #555;
             display: inline-block;
             margin-left: 8px;
         }
+        .status-light.off { background: #555; }
         .status-light.searching { background: #f8961e; animation: blink 1s infinite; }
-        .status-light.found { background: #06ffa5; box-shadow: 0 0 20px #06ffa5; }
+        .status-light.found { background: #06ffa5; box-shadow: 0 0 20px #06ffa5; animation: pulse 0.5s infinite; }
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
         .found-beacon {
             text-align: center;
-            padding: 30px;
+            padding: 25px;
             background: rgba(6, 255, 165, 0.1);
             border-radius: 20px;
             margin-top: 15px;
             display: none;
             border: 2px solid #06ffa5;
-            animation: pulse 0.5s infinite;
+            animation: glowPulse 0.8s infinite;
         }
-        @keyframes pulse {
+        @keyframes glowPulse {
             0%, 100% { box-shadow: 0 0 20px rgba(6, 255, 165, 0.3); }
             50% { box-shadow: 0 0 50px rgba(6, 255, 165, 0.8); }
         }
         .found-beacon i { font-size: 3rem; color: #06ffa5; }
-        .found-beacon h2 { color: #06ffa5; margin: 10px 0; }
+        .found-beacon h2 { color: #06ffa5; margin: 10px 0; font-size: 1.5rem; }
         .tag-list {
             max-height: 300px;
             overflow-y: auto;
@@ -117,6 +129,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: pointer;
         }
         .tag-item.found {
             background: rgba(6, 255, 165, 0.2);
@@ -124,8 +137,16 @@
         }
         .tag-epc {
             font-family: monospace;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: bold;
+            direction: ltr;
+            text-align: left;
+        }
+        .raw-data {
+            font-size: 10px;
+            color: #f8961e;
+            font-family: monospace;
+            margin-top: 4px;
         }
         .toast {
             position: fixed;
@@ -149,18 +170,29 @@
             left: -100px;
             opacity: 0;
         }
+        .match-info {
+            background: rgba(248, 150, 30, 0.2);
+            padding: 10px;
+            border-radius: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        .match-info span {
+            color: #f8961e;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-warehouse"></i> RFID Warehouse Finder</h1>
-            <p>الصق رقم التاج → اذهب للمخزن → امسح التاجات → اعثر عليه فوراً!</p>
+            <h1><i class="fas fa-warehouse"></i> RFID Warehouse Finder V2</h1>
+            <p>تم تصحيح مشكلة Enter ومسافات إضافية</p>
         </div>
 
         <div class="card">
-            <h3><i class="fas fa-tag"></i> 🎯 التاج المطلوب</h3>
-            <input type="text" id="targetTag" class="target-input" placeholder="مثال: E2001234567890">
+            <h3><i class="fas fa-tag"></i> 🎯 رقم التاج المطلوب</h3>
+            <input type="text" id="targetTag" class="target-input" placeholder="مثال: E2001234567890" autocomplete="off">
             <div class="btn-group">
                 <button id="pasteBtn" class="btn btn-primary"><i class="fas fa-paste"></i> لصق</button>
                 <button id="startBtn" class="btn btn-success"><i class="fas fa-search"></i> بدء البحث</button>
@@ -169,23 +201,36 @@
         </div>
 
         <div class="card">
-            <div class="btn-group" style="justify-content: space-between;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span class="status-light" id="statusLight"></span>
+                    <span class="status-light off" id="statusLight"></span>
                     <span id="statusText">في انتظار التاج</span>
                 </div>
-                <button id="testBtn" class="btn btn-warning btn-sm"><i class="fas fa-bell"></i> اختبار</button>
+                <button id="testBtn" class="btn btn-warning" style="padding: 8px 15px;"><i class="fas fa-bell"></i> اختبار</button>
+            </div>
+
+            <!-- معلومات التصحيح -->
+            <div class="match-info" id="matchInfo" style="display: none;">
+                <i class="fas fa-info-circle"></i> مقارنة:
+                <span id="compareTarget"></span> ← → <span id="compareScanned"></span>
             </div>
 
             <div id="foundBeacon" class="found-beacon">
                 <i class="fas fa-check-circle"></i>
                 <h2>🎉 تم العثور على التاج! 🎉</h2>
-                <p id="foundTag" style="font-family: monospace;"></p>
+                <p id="foundTag" style="font-family: monospace; font-size: 1.2rem;"></p>
             </div>
         </div>
 
         <div class="card">
             <h3><i class="fas fa-list"></i> التاجات المقروءة <span id="count" style="background:#4361ee; padding:2px 8px; border-radius:20px;">0</span></h3>
+            
+            <!-- عرض البيانات الخام من القارئ -->
+            <div style="background: #0a0a1a; border-radius: 10px; padding: 10px; margin-bottom: 10px;">
+                <div style="font-size: 11px; color: #888;">📡 آخر قراءة (خام):</div>
+                <div id="rawLastRead" class="raw-data" style="color: #f8961e; word-break: break-all;">--</div>
+            </div>
+            
             <div class="tag-list" id="tagList">
                 <div style="text-align:center; padding:30px; color:#666;">
                     <i class="fas fa-bluetooth-b" style="font-size:2rem;"></i><br>
@@ -203,14 +248,13 @@
 
     <script>
         // ============================================
-        // متغيرات حقيقية
+        // المتغيرات
         // ============================================
         let targetTag = "";
         let isSearching = false;
         let scannedTags = [];
         let audioCtx = null;
-        let lastEpc = "";
-        let lastTime = 0;
+        let lastRawData = "";
         let readBuffer = "";
         let bufferTimeout = null;
 
@@ -228,10 +272,31 @@
         const foundTagSpan = document.getElementById('foundTag');
         const tagList = document.getElementById('tagList');
         const countSpan = document.getElementById('count');
+        const rawLastRead = document.getElementById('rawLastRead');
+        const matchInfo = document.getElementById('matchInfo');
+        const compareTarget = document.getElementById('compareTarget');
+        const compareScanned = document.getElementById('compareScanned');
         const hiddenScanner = document.getElementById('hiddenScanner');
 
         // ============================================
-        // نظام الصوت (حقيقي)
+        // دالة تنظيف البيانات من Enter ومسافات
+        // ============================================
+        function cleanTagData(rawData) {
+            // إزالة Enter (\r, \n) والمسافات والتبويب
+            let cleaned = rawData
+                .replace(/[\r\n\t]/g, '')      // إزالة Enter و Tab
+                .replace(/\s/g, '')             // إزالة المسافات
+                .replace(/[^A-Za-z0-9]/g, '')   // إزالة أي رموز غريبة
+                .toUpperCase();
+            
+            // إزالة أي أحرف مكررة أو غير مرغوب فيها
+            cleaned = cleaned.trim();
+            
+            return cleaned;
+        }
+
+        // ============================================
+        // نظام الصوت
         // ============================================
         function initAudio() {
             if (!audioCtx) {
@@ -268,56 +333,93 @@
         }
 
         // ============================================
-        // معالجة قراءة التاج (من قارئ Bluetooth)
+        // معالجة القراءة من القارئ (المشكلة الأساسية)
         // ============================================
-        function processTag(data) {
-            let cleaned = data.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        function processScan(rawData) {
+            // عرض البيانات الخام للتصحيح
+            lastRawData = rawData;
+            rawLastRead.innerHTML = `"${escapeHtml(rawData)}" (${rawData.length} حرف)`;
             
-            if (cleaned.length >= 8 && cleaned.length <= 32) {
-                const now = Date.now();
-                if (cleaned === lastEpc && (now - lastTime) < 800) return;
-                
-                lastEpc = cleaned;
-                lastTime = now;
+            // تنظيف البيانات
+            const cleaned = cleanTagData(rawData);
+            
+            console.log(`📡 خام: "${rawData}"`);
+            console.log(`🧹 منقى: "${cleaned}"`);
+            
+            // التحقق من أن لدينا رقم صالح
+            if (cleaned.length >= 6 && cleaned.length <= 32) {
                 playScanSound();
                 
-                addTagToList(cleaned);
+                // إضافة إلى القائمة
+                addTagToList(cleaned, rawData);
                 
-                if (isSearching && targetTag && cleaned === targetTag.toUpperCase()) {
-                    onTagFound(cleaned);
-                } else if (isSearching && targetTag) {
-                    showToast(`📡 قرأ: ${formatEPC(cleaned)} - ليس المطلوب`, 2000);
+                // المقارنة مع التاج المطلوب
+                if (isSearching && targetTag) {
+                    const targetClean = cleanTagData(targetTag);
+                    
+                    // عرض معلومات المقارنة للتصحيح
+                    matchInfo.style.display = 'block';
+                    compareTarget.textContent = `"${targetClean}"`;
+                    compareScanned.textContent = `"${cleaned}"`;
+                    
+                    console.log(`🔍 مقارنة: "${targetClean}" == "${cleaned}" ? ${targetClean === cleaned}`);
+                    
+                    if (targetClean === cleaned) {
+                        console.log("✅✅✅ تم العثور على التاج! ✅✅✅");
+                        onTagFound(cleaned);
+                    } else {
+                        console.log(`❌ ليس التاج المطلوب. المطلوب: ${targetClean}, المقروء: ${cleaned}`);
+                        showToast(`📡 قرأ: ${formatEPC(cleaned)} - ليس التاج المطلوب`, 1500);
+                    }
+                }
+            } else {
+                console.log(`⚠️ بيانات غير صالحة: "${cleaned}" (طول ${cleaned.length})`);
+                if (cleaned.length > 0 && cleaned.length < 6) {
+                    rawLastRead.innerHTML += `<span style="color: #f8961e;"> ⚠️ البيانات قصيرة جداً (${cleaned.length} حرف)</span>`;
                 }
             }
         }
 
-        // التقاط من الكيبورد
+        // التقاط من الكيبورد (Bluetooth Reader)
         function setupCapture() {
             hiddenScanner.focus();
             
             hiddenScanner.addEventListener('input', (e) => {
-                if (e.target.value) {
-                    processTag(e.target.value);
+                const value = e.target.value;
+                if (value && value.length > 0) {
+                    processScan(value);
                     hiddenScanner.value = '';
                 }
             });
             
+            // استماع لأحداث الكيبورد
+            let keyboardBuffer = "";
+            let keyboardTimeout = null;
+            
             document.addEventListener('keypress', (e) => {
                 if (document.activeElement === targetInput) return;
                 
-                if (/[A-Za-z0-9]/i.test(e.key)) {
-                    readBuffer += e.key;
-                    if (bufferTimeout) clearTimeout(bufferTimeout);
-                    bufferTimeout = setTimeout(() => {
-                        if (readBuffer.length >= 6) processTag(readBuffer);
-                        readBuffer = "";
-                    }, 60);
-                } else if (e.key === 'Enter' && readBuffer.length > 0) {
-                    processTag(readBuffer);
-                    readBuffer = "";
+                const char = e.key;
+                keyboardBuffer += char;
+                
+                if (keyboardTimeout) clearTimeout(keyboardTimeout);
+                keyboardTimeout = setTimeout(() => {
+                    if (keyboardBuffer.length >= 4) {
+                        processScan(keyboardBuffer);
+                    }
+                    keyboardBuffer = "";
+                }, 50);
+            });
+            
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && keyboardBuffer.length > 0) {
+                    processScan(keyboardBuffer);
+                    keyboardBuffer = "";
+                    if (keyboardTimeout) clearTimeout(keyboardTimeout);
                 }
             });
             
+            // إعادة التركيز
             document.body.addEventListener('click', () => {
                 if (document.activeElement !== hiddenScanner && document.activeElement !== targetInput) {
                     hiddenScanner.focus();
@@ -328,12 +430,21 @@
         // ============================================
         // إدارة القائمة
         // ============================================
-        function addTagToList(epc) {
-            if (scannedTags.find(t => t.epc === epc)) return;
+        function addTagToList(epc, rawData) {
+            // التحقق من التكرار
+            const existing = scannedTags.find(t => t.epc === epc);
+            if (existing) {
+                // تحديث الوقت
+                existing.time = new Date().toLocaleTimeString('ar-SA');
+                existing.raw = rawData;
+                updateTagList();
+                return;
+            }
             
             scannedTags.unshift({
                 id: scannedTags.length + 1,
                 epc: epc,
+                raw: rawData,
                 time: new Date().toLocaleTimeString('ar-SA')
             });
             
@@ -344,23 +455,39 @@
         function updateTagList() {
             if (scannedTags.length === 0) {
                 tagList.innerHTML = `<div style="text-align:center; padding:30px; color:#666;">
-                    <i class="fas fa-bluetooth-b" style="font-size:2rem;"></i><br>قبل التاجات ستظهر هنا
+                    <i class="fas fa-bluetooth-b" style="font-size:2rem;"></i><br>
+                    قم بمسح التاجات - ستظهر هنا
                 </div>`;
                 countSpan.textContent = '0';
                 return;
             }
             
-            tagList.innerHTML = scannedTags.map(t => `
-                <div class="tag-item ${targetTag && t.epc === targetTag.toUpperCase() ? 'found' : ''}">
-                    <div>
-                        <div class="tag-epc">${formatEPC(t.epc)}</div>
-                        <div style="font-size:10px; color:#888;">${t.time}</div>
+            const targetClean = targetTag ? cleanTagData(targetTag) : "";
+            
+            tagList.innerHTML = scannedTags.map(t => {
+                const isMatch = targetClean && t.epc === targetClean;
+                return `
+                    <div class="tag-item ${isMatch ? 'found' : ''}" onclick="setAsTarget('${t.epc}')">
+                        <div>
+                            <div class="tag-epc">${formatEPC(t.epc)}</div>
+                            <div style="font-size:10px; color:#888;">${t.time}</div>
+                            ${t.raw ? `<div style="font-size:9px; color:#f8961e;">خام: "${escapeHtml(t.raw.substring(0, 30))}"</div>` : ''}
+                        </div>
+                        <div>
+                            ${isMatch ? '<span style="background:#06ffa5; color:#000; padding:4px 8px; border-radius:20px;">✓ المطلوب</span>' : ''}
+                        </div>
                     </div>
-                    ${targetTag && t.epc === targetTag.toUpperCase() ? '<span style="background:#06ffa5; color:#000; padding:4px 8px; border-radius:20px;">✓ المطلوب</span>' : ''}
-                </div>
-            `).join('');
+                `;
+            }).join('');
             
             countSpan.textContent = scannedTags.length;
+        }
+
+        function setAsTarget(epc) {
+            targetInput.value = epc;
+            targetTag = epc;
+            showToast(`🎯 تم تعيين: ${formatEPC(epc)}`, 1500);
+            startSearch();
         }
 
         function clearTagList() {
@@ -374,7 +501,7 @@
         // ============================================
         function onTagFound(epc) {
             playFoundSound();
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 300]);
             
             foundBeacon.style.display = 'block';
             foundTagSpan.textContent = formatEPC(epc);
@@ -385,7 +512,9 @@
             targetInput.style.borderColor = '#06ffa5';
             targetInput.style.boxShadow = '0 0 20px rgba(6,255,165,0.5)';
             
-            showToast(`🎯🎯🎯 تم العثور على التاج المطلوب! 🎯🎯🎯`, 4000);
+            updateTagList();
+            
+            showToast(`🎯🎯🎯 تم العثور على التاج المطلوب! ${formatEPC(epc)} 🎯🎯🎯`, 5000);
             
             setTimeout(() => {
                 targetInput.style.borderColor = '';
@@ -394,14 +523,14 @@
             
             setTimeout(() => {
                 foundBeacon.style.display = 'none';
-            }, 6000);
+            }, 8000);
         }
 
         // ============================================
         // التحكم الرئيسي
         // ============================================
         function startSearch() {
-            let newTarget = targetInput.value.trim().toUpperCase();
+            let newTarget = targetInput.value.trim();
             if (!newTarget) {
                 showToast('⚠️ الرجاء إدخال رقم التاج المطلوب', 2000);
                 return;
@@ -413,22 +542,28 @@
             statusLight.className = 'status-light searching';
             statusText.innerHTML = '🔍 جاري البحث... امسح التاجات';
             foundBeacon.style.display = 'none';
+            matchInfo.style.display = 'none';
             
             updateTagList();
-            showToast(`🎯 البحث عن: ${formatEPC(targetTag)}`, 2000);
+            
+            showToast(`🎯 البحث عن: ${formatEPC(cleanTagData(targetTag))}`, 2000);
             showToast(`🔍 اذهب إلى المخزن وامسح التاجات`, 2500);
             
             playSound(800, 0.1, 0.15);
+            
+            console.log(`🔍 بدء البحث عن: "${cleanTagData(targetTag)}"`);
         }
 
         function clearTarget() {
             targetTag = "";
             targetInput.value = "";
             isSearching = false;
-            statusLight.className = '';
+            statusLight.className = 'status-light off';
             statusText.innerHTML = 'في انتظار التاج';
             foundBeacon.style.display = 'none';
+            matchInfo.style.display = 'none';
             targetInput.style.borderColor = '';
+            targetInput.style.boxShadow = '';
             updateTagList();
             showToast('تم مسح التاج المستهدف', 1500);
         }
@@ -437,14 +572,15 @@
             try {
                 const text = await navigator.clipboard.readText();
                 if (text) {
-                    targetInput.value = text.trim();
-                    showToast('✅ تم لصق الرقم', 1500);
+                    const cleaned = cleanTagData(text);
+                    targetInput.value = cleaned;
+                    showToast(`✅ تم لصق الرقم: ${formatEPC(cleaned)}`, 2000);
                     startSearch();
                 } else {
                     showToast('الحافظة فارغة', 1500);
                 }
             } catch(e) {
-                showToast('الرجاء لصق الرقم يدوياً', 1500);
+                showToast('الرجاء لصق الرقم يدوياً (Ctrl+V)', 1500);
             }
         }
 
@@ -463,7 +599,18 @@
         // أدوات مساعدة
         // ============================================
         function formatEPC(epc) {
+            if (!epc) return '';
             return epc.match(/.{1,4}/g)?.join(' ') || epc;
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            }).replace(/[\r\n]/g, '↵');
         }
 
         function showToast(msg, duration = 2000) {
@@ -483,12 +630,15 @@
         testBtn.addEventListener('click', testSystem);
         focusBtn.addEventListener('click', () => {
             hiddenScanner.focus();
-            showToast('👆 القارئ جاهز - امسح أي تاج', 1500);
+            showToast('👆 القارئ جاهز - امسح أي تاج الآن', 1500);
         });
         clearTagsBtn.addEventListener('click', clearTagList);
         targetInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') startSearch();
         });
+
+        // جعل setAsTarget متاحة عالمياً
+        window.setAsTarget = setAsTarget;
 
         // التهيئة
         setupCapture();
@@ -496,9 +646,9 @@
         
         document.body.addEventListener('click', () => initAudio(), { once: true });
         
-        showToast('✨ النظام جاهز - الصق رقم التاج وابدأ البحث!', 3000);
+        showToast('✨ النظام جاهز - تم تصحيح مشكلة Enter', 3000);
         
-        console.log('✅ RFID Finder جاهز - انتظر قراءات من قارئ Bluetooth');
+        console.log('✅ RFID Finder V2 جاهز - تم تنظيف البيانات من Enter والمسافات');
     </script>
 </body>
 </html>
